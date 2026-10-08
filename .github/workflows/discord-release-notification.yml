@@ -1,0 +1,57 @@
+name: Discord Release Notification
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send release announcement to Discord
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_RELEASE_WEBHOOK }}
+          RELEASE_NAME: ${{ github.event.release.name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_URL: ${{ github.event.release.html_url }}
+          RELEASE_BODY: ${{ github.event.release.body }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          node <<'NODE'
+          const webhook = process.env.DISCORD_WEBHOOK;
+          if (!webhook) {
+            console.error('DISCORD_RELEASE_WEBHOOK secret is not configured.');
+            process.exit(1);
+          }
+
+          const description = (process.env.RELEASE_BODY || '').trim();
+          const payload = {
+            embeds: [{
+              title: process.env.RELEASE_NAME || process.env.RELEASE_TAG,
+              url: process.env.RELEASE_URL,
+              description: description
+                ? (description.length > 4000 ? `${description.slice(0, 3997)}...` : description)
+                : '새 릴리즈가 공개되었습니다.',
+              color: 0x5865F2,
+              fields: [
+                { name: '저장소', value: process.env.REPOSITORY, inline: true },
+                { name: '태그', value: process.env.RELEASE_TAG, inline: true },
+              ],
+              timestamp: new Date().toISOString(),
+            }],
+            allowed_mentions: { parse: [] },
+          };
+
+          const response = await fetch(webhook, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          if (!response.ok) {
+            console.error(`Discord webhook returned HTTP ${response.status}: ${await response.text()}`);
+            process.exit(1);
+          }
+          NODE
